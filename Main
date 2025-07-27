@@ -1,0 +1,101 @@
+import os
+import streamlit as st
+import openai
+
+def init_openai():
+    openai.api_key = os.getenv("OPENAI_API_KEY")
+
+st.set_page_config(page_title="Aprenda Inglês com Áudio", layout="centered")
+init_openai()
+
+st.title("Aprenda Inglês com Áudio")
+
+# 1. Tradutor PT → EN + TTS
+st.header("1. Traduzir e Ouvir")
+pt_text = st.text_area("Digite algo em português:", height=100)
+if st.button("🔊 Traduzir e Falar"):
+    if not pt_text.strip():
+        st.warning("Por favor, insira um texto em português.")
+    else:
+        # Chat completion for translation
+        response = openai.ChatCompletion.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "user", "content": f"Traduza para inglês: \"{pt_text}\""}
+            ]
+        )
+        en_text = response.choices[0].message.content.strip()
+        st.markdown(f"**Inglês:** {en_text}")
+
+        # TTS generation
+        tts_resp = openai.Audio.speech.create(
+            model="tts-1",
+            input=en_text,
+            voice="nova"
+        )
+        st.audio(tts_resp, format="audio/mpeg")
+
+# 2. Upload de áudio para gravação e correção
+st.header("2. Corrigir seu Inglês via Áudio")
+audio_file = st.file_uploader("Envie um arquivo de áudio (mp3/wav) com sua fala:", type=["mp3", "wav"])
+if audio_file is not None:
+    # Transcrição via Whisper
+    with st.spinner("Transcrevendo áudio..."):
+        transcript = openai.Audio.transcribe("whisper-1", audio_file)
+    recognized = transcript["text"].strip()
+    st.markdown(f"**Você disse:** {recognized}")
+
+    if st.button("📘 Corrigir e Ouvir"):
+        # Correção via ChatCompletion
+        system_prompt = (
+            "Você é um professor de inglês. "
+            "Corrija gramática, pronúncia e vocabulário do texto abaixo e responda apenas com a frase corrigida em inglês:"
+        )
+        chat = openai.ChatCompletion.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": recognized}
+            ]
+        )
+        corrected = chat.choices[0].message.content.strip()
+        st.markdown(f"**Correção:** {corrected}")
+
+        # TTS da correção
+        tts2 = openai.Audio.speech.create(
+            model="tts-1",
+            input=corrected,
+            voice="nova"
+        )
+        st.audio(tts2, format="audio/mpeg")
+
+
+Criei um app Streamlit (app.py) que:
+
+1. Traduz texto de português para inglês e reproduz via TTS.
+
+
+2. Permite fazer upload de um áudio (MP3/WAV), transcreve com Whisper, corrige gramática/pronúncia e reproduz a correção via TTS.
+
+
+
+Para executar:
+
+1. Instale dependências:
+
+pip install streamlit openai
+
+
+2. Defina sua chave de API:
+
+export OPENAI_API_KEY="sua_chave_aqui"
+
+
+3. Rode:
+
+streamlit run app.py
+
+
+
+Abra no navegador e aproveite!
+
