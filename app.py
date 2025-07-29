@@ -1,76 +1,84 @@
 import streamlit as st
 import openai
 from io import BytesIO
-from streamlit_audio_recorder import audio_recorder
 
-# Set your OpenAI API key
+# Configure your OpenAI API key in secrets.toml under [general]
 openai.api_key = st.secrets["OPENAI_API_KEY"]
 
 st.set_page_config(page_title="Aprenda Inglês com Áudio", layout="centered")
-
 st.title("Aprenda Inglês com Áudio")
 
-# Section 1: Translate Portuguese to English and play TTS
+# Section 1: Translate Portuguese → English and TTS playback
 st.header("1. Traduzir e Ouvir")
 pt_text = st.text_area("Digite algo em português", height=100)
 if st.button("🔊 Traduzir e Falar"):
-    if pt_text.strip() == "":
+    if not pt_text.strip():
         st.warning("Digite algo em português primeiro!")
     else:
-        # Translation via GPT
-        translation_resp = openai.ChatCompletion.create(
+        # 1.1 Tradução via GPT-4o
+        trans = openai.ChatCompletion.create(
             model="gpt-4o",
-            messages=[{"role": "user", "content": f'Traduza para inglês: "{pt_text.strip()}"'}]
+            messages=[
+                {"role": "user", "content": f'Traduza para inglês: "{pt_text.strip()}"'}
+            ]
         )
-        en_text = translation_resp.choices[0].message.content.strip()
+        en_text = trans.choices[0].message.content.strip()
         st.write("**Tradução:**", en_text)
 
-        # TTS via OpenAI Audio
-        tts_resp = openai.Audio.speech.create(
+        # 1.2 TTS via OpenAI Audio
+        tts = openai.Audio.speech.create(
             model="tts-1",
             input=en_text,
             voice="nova"
         )
-        st.audio(tts_resp, format="audio/mp3")
+        st.audio(tts, format="audio/mp3")
 
 st.markdown("---")
 
-# Section 2: Record English, transcribe, correct pronunciation, and play correction TTS
-st.header("2. Grave e Corrija")
-st.write("Clique no botão abaixo e fale em inglês. Depois, aguarde a transcrição e correção.")
+# Section 2: Upload your English audio, transcribe & correct
+st.header("2. Grave e Corrija (Upload de Áudio)")
+uploaded = st.file_uploader(
+    "Envie um arquivo de áudio (wav/mp3/m4a/ogg)",
+    type=["wav", "mp3", "m4a", "ogg"]
+)
+if uploaded:
+    audio_bytes = uploaded.read()
+    # Playback original
+    st.audio(audio_bytes, format=f"audio/{uploaded.type.split('/')[-1]}")
 
-audio_bytes = audio_recorder()
-if audio_bytes:
-    st.audio(audio_bytes, format="audio/wav")
-
-    # Transcription via Whisper
+    # 2.1 Transcrição com Whisper
     with st.spinner("Transcrevendo áudio..."):
         audio_file = BytesIO(audio_bytes)
-        transcription_resp = openai.Audio.transcribe("whisper-1", audio_file)
-        falado = transcription_resp["text"].strip()
+        transcription = openai.Audio.transcribe("whisper-1", audio_file)
+        falado = transcription["text"].strip()
     st.write("**Você disse:**", falado)
 
-    # Pronunciation correction via GPT
+    # 2.2 Correção de pronúncia com GPT-4o
     with st.spinner("Corrigindo pronúncia..."):
-        correction_resp = openai.ChatCompletion.create(
+        correction = openai.ChatCompletion.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": (
-                    "Você é um professor de inglês. Corrija o texto abaixo "
-                    "e responda sempre no formato: 'you meant to say... <frase corrigida>'"
-                )},
+                {
+                    "role": "system",
+                    "content": (
+                        "Você é um professor de inglês. "
+                        "Corrija o texto abaixo e responda sempre no formato: "
+                        "'you meant to say... <frase corrigida>'"
+                    )
+                },
                 {"role": "user", "content": falado}
             ]
         )
-        corr_text = correction_resp.choices[0].message.content.strip()
+        corr_text = correction.choices[0].message.content.strip()
     st.write("**Correção:**", corr_text)
 
-    # TTS for corrected phrase
-    tts_corr_resp = openai.Audio.speech.create(
+    # 2.3 TTS da frase corrigida
+    tts_corr = openai.Audio.speech.create(
         model="tts-1",
         input=corr_text,
         voice="nova"
     )
-    st.audio(tts_corr_resp, format="audio/mp3")
+    st.audio(tts_corr, format="audio/mp3")
+
 
 
