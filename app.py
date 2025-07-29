@@ -85,7 +85,4 @@ if uploaded:
 
 # Sidebar: Installation & run instructions
 st.sidebar.header("Instruções de Instalação")
-st.sidebar.markdown("""
-```bash
-pip install --upgrade openai streamlit
-openai migrate    # apenas se você atualizou de <1.0.0
+
