@@ -83,5 +83,5 @@ if uploaded:
 
 # Sidebar: Installation & run instructions
 st.sidebar.header("Instruções de Instalação")
-st.sidebar.markdown("""
+
 
