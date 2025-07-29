@@ -1,91 +1,131 @@
 import streamlit as st
-import openai
-from io import BytesIO
+import streamlit.components.v1 as components
 
-#  ——— Configuration ———
-# Put your key under [general] in secrets.toml:
-# OPENAI_API_KEY="sk-..."
-openai.api_key = st.secrets["OPENAI_API_KEY"]
+# Configure your OpenAI key in secrets.toml under [general]
+OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 
 st.set_page_config(page_title="Aprenda Inglês com Áudio", layout="centered")
 st.title("Aprenda Inglês com Áudio")
 
-#  ——— Section 1: Traduzir PT → EN + TTS ———
-st.header("1. Traduzir e Ouvir")
-pt_text = st.text_area("Digite algo em português", height=100)
+html_code = f"""
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <title>Aprenda Inglês com Áudio</title>
+  <style>
+    body {{{{ max-width: 700px; margin: auto; padding: 1rem; font-family: sans-serif; display: flex; flex-direction: column; gap: 2rem; }}}}
+    textarea, button {{{{ font-size: 1rem; }}}}
+    textarea {{{{ width: 100%; height: 80px; padding: 8px; box-sizing: border-box; resize: vertical; }}}}
+    section {{{{ border: 1px solid #ccc; border-radius: 8px; padding: 1rem; }}}}
+    section h2 {{{{ margin-top: 0; }}}}
+    p {{{{ background: #f9f9f9; padding: 8px; border-radius: 4px; min-height: 1.5em; }}}}
+  </style>
+</head>
+<body>
+  <h1>Aprenda Inglês com Áudio</h1>
 
-if st.button("🔊 Traduzir e Falar"):
-    if not pt_text.strip():
-        st.warning("Digite algo em português primeiro!")
-    else:
-        # Tradução via Chat Completions v1
-        trans = openai.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "user", "content": f'Traduza para inglês: "{pt_text.strip()}"'}]
-        )  # :contentReference[oaicite:0]{index=0}
-        en_text = trans.choices[0].message.content.strip()
-        st.write("**Tradução:**", en_text)
+  <section>
+    <h2>1. Traduzir e Ouvir</h2>
+    <textarea id="inputPT" placeholder="Digite algo em português"></textarea>
+    <button onclick="traduzirEReproduzir()">🔊 Traduzir e Falar</button>
+    <p id="respostaPT"></p>
+    <audio id="audioPT" controls style="display:none;"></audio>
+  </section>
 
-        # TTS via Audio.speech.create → returns HttpxBinaryResponseContent
-        tts = openai.audio.speech.create(
-            model="tts-1",
-            input=en_text,
-            voice="nova"
-        )  # :contentReference[oaicite:1]{index=1}
+  <section>
+    <h2>2. Grave e Corrija</h2>
+    <button onclick="corrigirPronuncia()">🎤 Grave em Inglês</button>
+    <p><strong>Você disse:</strong> <span id="reconhecido"></span></p>
+    <p><strong>Correção:</strong> <span id="correcao"></span></p>
+    <audio id="audioEN" controls style="display:none;"></audio>
+  </section>
 
-        # Pull out the raw MP3 bytes
-        audio_bytes = tts.content  # HttpxBinaryResponseContent.content → bytes :contentReference[oaicite:2]{index=2}
-        st.audio(audio_bytes, format="audio/mp3")
+  <script>
+    const OPENAI_API_KEY = "{OPENAI_API_KEY}";
 
+    async function traduzirEReproduzir() {{{{
+      const pt = document.getElementById("inputPT").value.trim();
+      if (!pt) return alert("Digite algo em português primeiro!");
+      const chat = await fetch("https://api.openai.com/v1/chat/completions", {{{{
+        method: "POST",
+        headers: {{{{
+          "Content-Type":"application/json",
+          "Authorization": `Bearer ${{OPENAI_API_KEY}}`
+        }}}},
+        body: JSON.stringify({{{{
+          model: "gpt-4o",
+          messages: [{{ role:"user", content:`Traduza para inglês: "${{pt}}"` }}]
+        }}}})
+      }}}});
+      const chatData = await chat.json();
+      const en = chatData.choices[0].message.content.trim();
+      document.getElementById("respostaPT").innerText = en;
+      const tts = await fetch("https://api.openai.com/v1/audio/speech", {{{{
+        method: "POST",
+        headers: {{{{
+          "Content-Type":"application/json",
+          "Authorization": `Bearer ${{OPENAI_API_KEY}}`
+        }}}},
+        body: JSON.stringify({{{{ model:"tts-1", input:en, voice:"nova" }}}})
+      }}}});
+      const blob = await tts.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = document.getElementById("audioPT");
+      audio.src = url; audio.style.display="block"; audio.play();
+    }}}}
 
-st.markdown("---")
+    function corrigirPronuncia() {{{{
+      const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!Recognition) return alert("SpeechRecognition não suportado.");
+      const rec = new Recognition();
+      rec.lang = "en-US";
+      rec.interimResults = false;
+      rec.maxAlternatives = 1;
 
-#  ——— Section 2: Upload de áudio, transcrição + correção ———
-st.header("2. Grave e Corrija (Upload de Áudio)")
-uploaded = st.file_uploader(
-    "Envie um arquivo de áudio (wav/mp3/m4a/ogg)",
-    type=["wav", "mp3", "m4a", "ogg"]
-)
-
-if uploaded:
-    audio_bytes = uploaded.read()
-    st.audio(audio_bytes, format=f"audio/{uploaded.type.split('/')[-1]}")
-
-    # Transcrição com Whisper
-    with st.spinner("Transcrevendo áudio..."):
-        transcription = openai.Audio.transcribe("whisper-1", BytesIO(audio_bytes))  # :contentReference[oaicite:3]{index=3}
-        falado = transcription["text"].strip()
-    st.write("**Você disse:**", falado)
-
-    # Correção de pronúncia via Chat Completions
-    with st.spinner("Corrigindo pronúncia..."):
-        correction = openai.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "Você é um professor de inglês. Corrija o texto abaixo e "
-                        "responda sempre no formato: 'you meant to say... <frase corrigida>'"
-                    )
-                },
-                {"role": "user", "content": falado}
+      rec.onresult = async (e) => {{{{
+        const falado = e.results[0][0].transcript.trim();
+        document.getElementById("reconhecido").innerText = falado;
+        const corr = await fetch("https://api.openai.com/v1/chat/completions", {{{{
+          method:"POST",
+          headers: {{{{
+            "Content-Type":"application/json",
+            "Authorization": `Bearer ${{OPENAI_API_KEY}}`
+          }}}},
+          body: JSON.stringify({{{{
+            model: "gpt-4o",
+            messages: [
+              {{ role:"system", content:"Você é um professor de inglês. Corrija o texto abaixo e responda sempre: you meant to say... e diga a frase corrigida" }},
+              {{ role:"user", content:falado }}
             ]
-        )  # :contentReference[oaicite:4]{index=4}
-        corr_text = correction.choices[0].message.content.strip()
-    st.write("**Correção:**", corr_text)
+          }}}})
+        }}}});
+        const corrData = await corr.json();
+        const fraseCorr = corrData.choices[0].message.content.trim();
+        document.getElementById("correcao").innerText = fraseCorr;
+        const tts2 = await fetch("https://api.openai.com/v1/audio/speech", {{{{
+          method:"POST",
+          headers: {{{{
+            "Content-Type":"application/json",
+            "Authorization": `Bearer ${{OPENAI_API_KEY}}`
+          }}}},
+          body: JSON.stringify({{{{ model:"tts-1", input:fraseCorr, voice:"nova" }}}})
+        }}}});
+        const blob2 = await tts2.blob();
+        const url2 = URL.createObjectURL(blob2);
+        const audio2 = document.getElementById("audioEN");
+        audio2.src = url2; audio2.style.display="block"; audio2.play();
+      }}}};
 
-    # TTS da correção
-    tts_corr = openai.audio.speech.create(
-        model="tts-1",
-        input=corr_text,
-        voice="nova"
-    )  # :contentReference[oaicite:5]{index=5}
+      rec.onerror = (err) => alert("Erro no reconhecimento: " + err.error);
+      rec.start();
+    }}}}
+  </script>
+</body>
+</html>
+"""
 
-    audio_corr_bytes = tts_corr.content
-    st.audio(audio_corr_bytes, format="audio/mp3")
+components.html(html_code, height=900, scrolling=True)
 
-
-#  ——— Sidebar: Setup instructions ———
-st.sidebar.header("Instruções de Instalação")
+st.sidebar.header("Instruções")
 
